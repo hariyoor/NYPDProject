@@ -1,0 +1,157 @@
+---
+title: "NYPDProject"
+author: "H. Kappiyoor"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr)
+library(magrittr)
+library(tidyverse)
+library(knitr)
+library(lubridate)
+```
+
+
+# Step 1
+## Setting up the dataframe.
+```{r step1, include=TRUE}
+url_in <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+crime <- read_csv("https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD")
+```
+
+# Step 2
+## Tidying up the data
+```{r step2, include=TRUE}
+# Order the crime statistics by increasing Incident Key
+crime$INCIDENT_KEY <- as.numeric(as.character(crime$INCIDENT_KEY))
+crime[order(crime$INCIDENT_KEY, decreasing = FALSE), ]
+# Remove some of the columns corresponding to minute details, so that we can deal with only the data that 
+# explains shooting data on a bigger scale. For example, the exact coordinates of each crime don't
+# have much impact
+crime <- crime  %>% select(-c('JURISDICTION_CODE', 'LOCATION_DESC', 'STATISTICAL_MURDER_FLAG', 'X_COORD_CD',	'Y_COORD_CD',	'Latitude',	'Longitude',	'Lon_Lat')) %>% mutate(OCCUR_DATE = mdy(OCCUR_DATE))
+
+```
+
+# Step 3a
+## Visualizations and Analyses - Crime Across all Precincts in January 2021
+```{r step3a, include=TRUE}
+# Get all crimes occurring in January 2021
+crime_jan <- crime %>% filter(OCCUR_DATE >= '2021-1-1' & OCCUR_DATE <= '2021-1-31')
+
+# Initialize new data frame to contain the totals for January 2021 for each precinct
+crime_by_precinct <- data.frame(matrix(ncol = 2, nrow = 0))
+header_col <- c("Precinct", "Amount")
+colnames(crime_by_precinct) <- header_col
+
+# Extract all precincts present in the data
+precincts <- unique(crime_jan[c("PRECINCT")])
+precincts <- precincts$PRECINCT
+
+# For each precinct, get the total amount of crimes in that precinct and store the value in crime_by_precinct
+for(i in 1:length(precincts)) {
+  precinctCurr <- precincts[i]
+  all_crimes_precinctCurr <- crime_jan %>% filter(PRECINCT == precinctCurr)
+  amount_of_crimes <- nrow(all_crimes_precinctCurr)
+  crime_by_precinct[nrow(crime_by_precinct) +1,] <- c(precinctCurr, amount_of_crimes)
+}
+
+# Order the data by increasing Precinct number. This will help in the following bar plot
+crime_by_precinct$Precinct <- as.numeric(as.character(crime_by_precinct$Precinct))
+crime_by_precinct <- crime_by_precinct[order(crime_by_precinct$Precinct), ]
+
+# Output all the totals by precinct, and display a bar plot with the data
+kable(crime_by_precinct)
+barplot(
+  main="Amount of Cases Per Precinct, January 2021",
+  crime_by_precinct$Amount, names.arg=crime_by_precinct$Precinct,
+  las=2, cex.names=.5, xlab="Precinct", ylab="Amount of Cases"
+)
+
+# See the distribution of crimes within high volume precincts.
+crime_by_precinct_high <- crime_by_precinct %>% filter(Amount > 5)
+crime_by_precinct_normal <- crime_by_precinct %>% filter(Amount <= 5)
+
+crime_by_precinct_high$Precinct <- sub("^","Precinct ",crime_by_precinct_high$Precinct) 
+#dat$V1 <- sub("^", "chr", dat$V1 )
+high_amounts <- crime_by_precinct_high$Amount
+high_amounts <- (100*high_amounts)/(sum(high_amounts))
+
+# Display pie chart for all the high volume precincts
+ggplot(crime_by_precinct_high, aes(x="", y=Amount, fill=Precinct)) +
+  geom_bar(stat="identity", width=1) +
+  coord_polar("y", start=0) + ggtitle("Distribution of Crime in High Volume Precincts")
+```
+
+# Step 3b
+## Visualizations and Analyses: Shooting Crimes in the 40th, 47th, and 75th Precincts, 2006-2021
+```{r step3b, include=TRUE}
+# Get all shooting crimes for the 47th precinct over the time frame of the data.
+
+precinctsAmt <- length(precincts)
+precinctsAmtHigh <- as.numeric(3)
+precinctsAmtLow <- as.numeric(precinctsAmt-3)
+
+crime_for_high <- crime %>% filter(PRECINCT==47 | PRECINCT==40 | PRECINCT==75)
+crime_for_low <- crime %>% filter(!(PRECINCT==47 | PRECINCT==40 | PRECINCT==75))
+
+# Create a new dataframe, and store all the total crimes per year.
+crime_for_high_by_year <- data.frame(matrix(ncol=2, nrow=0))
+crime_for_low_by_year <- data.frame(matrix(ncol=2, nrow=0))
+crime_total_by_year <- data.frame(matrix(ncol=2, nrow=0))
+
+temp_table <- data.frame(matrix(ncol=2,nrow=0))
+temp_col <- c("Total", "Average")
+colnames(temp_table) <- temp_col
+
+
+header_col <- c("Year", "Amount")
+colnames(crime_for_high_by_year) <- header_col
+colnames(crime_for_low_by_year) <- header_col
+colnames(crime_total_by_year) <- header_col
+
+curr_year <- 2006
+for(i in (curr_year):2021) {
+  curr_begin <- paste("1/1/",i,sep="")
+  curr_begin <- mdy(curr_begin)
+  curr_end <- paste("12/31/",i, sep="")
+  curr_end <- mdy(curr_end)
+  
+  curr_year_crimes_high <- crime_for_high %>% filter(OCCUR_DATE>=curr_begin & OCCUR_DATE<=curr_end)
+  curr_count_high <- nrow(curr_year_crimes_high)
+  
+  curr_year_crimes_low <- crime_for_low %>% filter(OCCUR_DATE>=curr_begin & OCCUR_DATE<=curr_end)
+  curr_count_low <- nrow(curr_year_crimes_low)
+    
+  curr_year_crimes <- crime %>% filter(OCCUR_DATE>=curr_begin & OCCUR_DATE<=curr_end)
+  curr_count <- nrow(curr_year_crimes)
+  
+  crime_for_high_by_year[nrow(crime_for_high_by_year) +1,] <- c(i, (as.numeric(curr_count_high))/precinctsAmtHigh)
+  crime_for_low_by_year[nrow(crime_for_low_by_year) +1,] <- c(i,(as.numeric(curr_count_low))/precinctsAmtLow)
+  crime_total_by_year[nrow(crime_total_by_year) +1,] <- c(i, as.numeric(curr_count)/precinctsAmt)
+  
+  temp_table[nrow(temp_table) +1,] <- c(curr_count_low, precinctsAmt)
+}
+
+# Output the totals and plot a line graph displaying the change in crime over time in the 47th precinct.
+kable(crime_for_high_by_year)
+ggplot()+geom_line(data = crime_for_high_by_year, aes(x=Year, y=Amount))+ggtitle("Amounts of Crimes per Precinct in the 40th, 47th, and 75th Precincts, 2006-2021")
+kable(crime_for_low_by_year)
+ggplot(data = crime_for_low_by_year, aes(x=Year, y=Amount))+geom_line()+ggtitle("Amounts of Crimes per Precinct in Low Volume Precincts, 2006-2021")
+kable(crime_total_by_year)
+ggplot(data=crime_total_by_year, aes(x=Year, y=Amount))+geom_line()+ggtitle("Amounts of Crimes per Precinct Citywide, 2006-2021")
+
+ggplot() + geom_line(data = crime_for_high_by_year, aes(x=Year, y=Amount), color='red') + geom_line(data = crime_for_low_by_year, aes(x=Year, y=Amount), color='blue') + geom_line(data=crime_total_by_year, aes(x=Year, y=Amount)) + ggtitle("Comparison between Averages in Low-Volume Precincts, High-Volume Precincts, and All Precincts")
+```
+
+
+
+Potential Sources of Bias:
+
+I chose to analyze two different trends in New York crime: one for the distribution of crime over different precincts during a specific month, and another for the crime occurrences over the time frame described in the dataset in the 52nd precinct. I can observe that in January 2021, precincts 40, 47, and 75 saw an abnormally high amount of crime, as compared to the other reported precincts. I can also conclude that in the 47th district, crime was, more or less on a steady decline from 2006 to 2019. From 2019 onwards, however, it went on a steep rise. As such, I can conclude that the 47th precinct's high level of crime in January 2021 was not an anomaly, but the result of a drastic rise in crime that began nearly 2 years beforehand.
+
+Some potential sources of bias for these findings include that the data I analyzed could be somewhat incomplete, as the steep increase indicates that the daily crime rate jumped to rates higher than they were before 2006 within less than a year. Another potential source of bias could be that certain cases were not properly classified to be in the correct precinct, either in the past or in the present. 
